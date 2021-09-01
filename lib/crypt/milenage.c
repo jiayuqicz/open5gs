@@ -55,7 +55,8 @@ int milenage_f1(const uint8_t *opc, const uint8_t *k,
 {
 	uint8_t tmp1[16], tmp2[16], tmp3[16];
 	int i;
-
+	// uint8_t r1 = 64;
+	uint8_t r1 = 32;
 	/* tmp1 = TEMP = E_K(RAND XOR OP_C) */
 	for (i = 0; i < 16; i++)
 		tmp1[i] = _rand[i] ^ opc[i];
@@ -70,8 +71,10 @@ int milenage_f1(const uint8_t *opc, const uint8_t *k,
 	/* OUT1 = E_K(TEMP XOR rot(IN1 XOR OP_C, r1) XOR c1) XOR OP_C */
 
 	/* rotate (tmp2 XOR OP_C) by r1 (= 0x40 = 8 bytes) */
-	for (i = 0; i < 16; i++)
-		tmp3[(i + 8) % 16] = tmp2[i] ^ opc[i];
+	// for (i = 0; i < 16; i++)
+	// 	tmp3[(i + (16-r1/8)) % 16] = tmp2[i] ^ opc[i];
+  ShiftBits(r1, tmp3, tmp2, opc);
+
 	/* XOR with TEMP = E_K(RAND XOR OP_C) */
 	for (i = 0; i < 16; i++)
 		tmp3[i] ^= tmp1[i];
@@ -106,6 +109,16 @@ int milenage_f2345(const uint8_t *opc, const uint8_t *k,
     const uint8_t *_rand, uint8_t *res, uint8_t *ck, 
     uint8_t *ik, uint8_t *ak, uint8_t *akstar)
 {
+	// r1=64, r2=0, r3=32, r4=64, r5=96
+  // uint8_t r2 = 0;
+	// uint8_t r3 = 32;
+	// uint8_t r4 = 64;
+	// uint8_t r5 = 96;
+  uint8_t r2 = 19;
+	uint8_t r3 = 47;
+	uint8_t r4 = 73;
+	uint8_t r5 = 91;
+
 	uint8_t tmp1[16], tmp2[16], tmp3[16];
 	int i;
 
@@ -122,8 +135,10 @@ int milenage_f2345(const uint8_t *opc, const uint8_t *k,
 
 	/* f2 and f5 */
 	/* rotate by r2 (= 0, i.e., NOP) */
-	for (i = 0; i < 16; i++)
-		tmp1[i] = tmp2[i] ^ opc[i];
+	// for (i = 0; i < 16; i++)
+	// 	tmp1[(i + (16-r2/8)) % 16] = tmp2[i] ^ opc[i];
+  ShiftBits(r2, tmp1, tmp2, opc);
+
 	tmp1[15] ^= 1; /* XOR c2 (= ..01) */
 	/* f5 || f2 = E_K(tmp1) XOR OP_c */
 	if (aes_128_encrypt_block(k, tmp1, tmp3))
@@ -138,8 +153,9 @@ int milenage_f2345(const uint8_t *opc, const uint8_t *k,
 	/* f3 */
 	if (ck) {
 		/* rotate by r3 = 0x20 = 4 bytes */
-		for (i = 0; i < 16; i++)
-			tmp1[(i + 12) % 16] = tmp2[i] ^ opc[i];
+		// for (i = 0; i < 16; i++)
+		// 	tmp1[(i + (16-r3/8)) % 16] = tmp2[i] ^ opc[i];
+		ShiftBits(r3, tmp1, tmp2, opc);	
 		tmp1[15] ^= 2; /* XOR c3 (= ..02) */
 		if (aes_128_encrypt_block(k, tmp1, ck))
 			return -1;
@@ -150,8 +166,9 @@ int milenage_f2345(const uint8_t *opc, const uint8_t *k,
 	/* f4 */
 	if (ik) {
 		/* rotate by r4 = 0x40 = 8 bytes */
-		for (i = 0; i < 16; i++)
-			tmp1[(i + 8) % 16] = tmp2[i] ^ opc[i];
+		// for (i = 0; i < 16; i++)
+		// 	tmp1[(i + (16-r4/8)) % 16] = tmp2[i] ^ opc[i];
+		ShiftBits(r4, tmp1, tmp2, opc);	
 		tmp1[15] ^= 4; /* XOR c4 (= ..04) */
 		if (aes_128_encrypt_block(k, tmp1, ik))
 			return -1;
@@ -162,8 +179,9 @@ int milenage_f2345(const uint8_t *opc, const uint8_t *k,
 	/* f5* */
 	if (akstar) {
 		/* rotate by r5 = 0x60 = 12 bytes */
-		for (i = 0; i < 16; i++)
-			tmp1[(i + 4) % 16] = tmp2[i] ^ opc[i];
+		// for (i = 0; i < 16; i++)
+		// 	tmp1[(i + (16-r5/8)) % 16] = tmp2[i] ^ opc[i];
+		ShiftBits(r5, tmp1, tmp2, opc);	
 		tmp1[15] ^= 8; /* XOR c5 (= ..08) */
 		if (aes_128_encrypt_block(k, tmp1, tmp1))
 			return -1;
@@ -363,4 +381,70 @@ void milenage_opc(const uint8_t *k, const uint8_t *op,  uint8_t *opc)
     {
         opc[i] ^= op[i];
     }
+}
+
+void ShiftBits(uint8_t r, uint8_t rijndaelInput[16],
+	       uint8_t temp[16], const uint8_t opc[16])
+{
+  uint32_t deltlen = 16 - (r/8);
+  uint32_t leftout = r%8;
+  uint32_t i;
+  printf("R=%d, ByteMove=%d\n", r, deltlen);
+  if(leftout == 0) {
+    for (i = 0; i < 16; i++) {
+      rijndaelInput[(i + deltlen) % 16] = temp[i] ^ opc[i];
+    }
+  }
+  else {
+    printf("Leftout=%d, ByteMove=%d\n", leftout, deltlen);
+    uint8_t temp1[16];
+    for (i = 0; i < 16; i++) {
+      temp1[(i + deltlen) % 16] = temp[i] ^ opc[i];
+    }
+    rijndaelInput[15] = 0;
+    uint32_t move_bits = 8 - leftout;
+    printf("ValidBits=%d\n", move_bits);
+    bits_shift(move_bits, &rijndaelInput[0], temp1, (128 - leftout));
+    uint8_t temp2 = temp1[0] >> (8-leftout);
+    rijndaelInput[15] |= temp2;
+  }
+  return;
+}
+
+uint8_t *bits_shift(uint32_t bit_valid, uint8_t *dst,
+			 uint8_t *src, uint32_t numBits)
+{
+  uint32_t bit_used = bit_valid;
+  uint32_t bit_empty = 8-bit_used;
+  uint32_t numBytes = numBits>>3;
+  uint32_t leftBits = numBits&0x7;
+	uint32_t i = 0;
+  for(i=0; i<numBytes; i++) {
+    dst[i] = (src[i]<<bit_empty) |
+      (src[i+1]>>bit_used);
+  }
+  uint8_t *newDst = 0;
+  if(leftBits) {
+    if(leftBits == bit_used) {
+      dst[numBytes] = src[numBytes] << bit_empty;
+      bit_valid = 8;
+      newDst = &src[numBytes+1];
+    }
+    else if(leftBits < bit_used) {
+      dst[numBytes] = src[numBytes] << bit_empty;
+      bit_valid = bit_used-leftBits;
+      newDst = &src[numBytes];
+    }
+    else {
+      dst[numBytes] = src[numBytes] << bit_empty |
+	(src[numBytes+1]>>bit_used);
+      bit_valid = 8-(leftBits-bit_used);
+      newDst = &src[numBytes+1];
+    }
+  }
+  else {
+    bit_valid = bit_used;
+    newDst = &src[numBytes];
+  }
+  return newDst;
 }

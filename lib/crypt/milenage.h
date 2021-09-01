@@ -17,6 +17,10 @@
 extern "C" {
 #endif
 
+void ShiftBits(uint8_t r, uint8_t rijndaelInput[16],
+	       uint8_t temp[16], const uint8_t opc[16]);
+uint8_t *bits_shift(uint32_t bit_valid, uint8_t *dst,
+			 uint8_t *src, uint32_t numBits);
 void milenage_generate(const uint8_t *opc, const uint8_t *amf, 
     const uint8_t *k, const uint8_t *sqn, const uint8_t *_rand, 
     uint8_t *autn, uint8_t *ik, uint8_t *ck, uint8_t *ak,
